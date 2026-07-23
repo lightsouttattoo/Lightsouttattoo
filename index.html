@@ -662,13 +662,20 @@
         <div id="login-panel" class="admin-section">
             <h2>Admin Login</h2>
             <div class="form-group">
-                <label>Passcode</label>
-                <input type="password" id="admin-pass" placeholder="Enter PIN (1234)">
+                <label>Email / Username</label>
+                <input type="email" id="admin-email" placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="admin-pass" placeholder="Password">
             </div>
             <button class="btn" onclick="handleLogin()">Login</button>
         </div>
 
         <div id="dashboard-panel" style="display: none;">
+            <div style="text-align: right; margin-bottom: 15px;">
+                <button class="btn" onclick="handleLogout()" style="background: #ef4444; width: auto; padding: 6px 12px; font-size: 0.8rem;">Logout</button>
+            </div>
             <div class="admin-section">
                 <h2>Add New Gallery Piece</h2>
                 <div class="form-group">
@@ -714,8 +721,8 @@
                     <input type="text" id="new-blog-title" placeholder="Title">
                 </div>
                 <div class="form-group">
-                    <label>Media Filename / URL (Image or Video)</label>
-                    <input type="text" id="new-blog-media" placeholder="filename.jpg">
+                    <label>Media Filename / URL (Image, Video, or YouTube Link)</label>
+                    <input type="text" id="new-blog-media" placeholder="filename.jpg or YouTube URL">
                 </div>
                 <div class="form-group">
                     <label>Content</label>
@@ -767,6 +774,17 @@
         } catch (e) {
             console.error("Supabase init error:", e);
         }
+
+        // Check existing session on load
+        async function checkUserSession() {
+            if (!dbClient) return;
+            const { data: { session } } = await dbClient.auth.getSession();
+            if (session) {
+                document.getElementById('login-panel').style.display = 'none';
+                document.getElementById('dashboard-panel').style.display = 'block';
+            }
+        }
+        checkUserSession();
 
         // Local Fallback Data
         let galleryData = [
@@ -1014,7 +1032,7 @@
             e.target.reset();
         }
 
-        // Render Blog
+        // Render Blog with YouTube embedding support
         function renderBlog() {
             const container = document.getElementById('dynamic-blog');
             if (!container) return;
@@ -1022,7 +1040,17 @@
             blogData.forEach(post => {
                 let mediaHtml = '';
                 if(post.media) {
-                    if(post.media.endsWith('.mp4') || post.media.endsWith('.webm') || post.media.endsWith('.mov')) {
+                    if(post.media.includes('youtube.com') || post.media.includes('youtu.be')) {
+                        let videoId = '';
+                        if(post.media.includes('youtu.be/')) {
+                            videoId = post.media.split('youtu.be/')[1].split('?')[0];
+                        } else if(post.media.includes('watch?v=')) {
+                            videoId = post.media.split('watch?v=')[1].split('&')[0];
+                        }
+                        if(videoId) {
+                            mediaHtml = `<div style="position:relative;width:100%;height:0;padding-bottom:56.25%;background:#000;"><iframe src="https://www.youtube.com/embed/${videoId}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen></iframe></div>`;
+                        }
+                    } else if(post.media.endsWith('.mp4') || post.media.endsWith('.webm') || post.media.endsWith('.mov')) {
                         mediaHtml = `<video src="${post.media}" class="blog-media" controls></video>`;
                     } else {
                         mediaHtml = `<img src="${post.media}" class="blog-media" alt="${post.title}">`;
@@ -1041,15 +1069,46 @@
             });
         }
 
-        // Admin Actions
-        function handleLogin() {
-            const pin = document.getElementById('admin-pass').value;
-            if(pin === '1234') {
-                document.getElementById('login-panel').style.display = 'none';
-                document.getElementById('dashboard-panel').style.display = 'block';
-            } else {
-                alert('Incorrect PIN (Try 1234)');
+        // Admin Auth Actions (Supabase Auth)
+        async function handleLogin() {
+            const email = document.getElementById('admin-email').value;
+            const password = document.getElementById('admin-pass').value;
+
+            if(!email || !password) {
+                alert('Please enter your email and password.');
+                return;
             }
+
+            if (dbClient) {
+                const { data, error } = await dbClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+
+                if (error) {
+                    alert('Login failed: ' + error.message);
+                    return;
+                }
+
+                if (data.session) {
+                    document.getElementById('login-panel').style.display = 'none';
+                    document.getElementById('dashboard-panel').style.display = 'block';
+                    alert('Logged in successfully!');
+                }
+            } else {
+                alert('Supabase client not initialized.');
+            }
+        }
+
+        async function handleLogout() {
+            if (dbClient) {
+                await dbClient.auth.signOut();
+            }
+            document.getElementById('dashboard-panel').style.display = 'none';
+            document.getElementById('login-panel').style.display = 'block';
+            document.getElementById('admin-email').value = '';
+            document.getElementById('admin-pass').value = '';
+            alert('Logged out successfully.');
         }
 
         async function addGalleryItem() {
